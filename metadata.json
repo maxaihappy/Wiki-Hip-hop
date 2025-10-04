@@ -1,0 +1,5 @@
+{
+  "name": "Wiki Hip-hop",
+  "description": "An AI-powered app that takes any set of keywords, finds their definitions, weaves a story, and generates a unique hip-hop song with lyrics and a beat description.",
+  "requestFramePermissions": []
+}
