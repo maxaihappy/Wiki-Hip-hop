@@ -8,20 +8,45 @@ interface SongResultProps {
 const SongResult: React.FC<SongResultProps> = ({ result }) => {
   const { song } = result;
   const [isPlaying, setIsPlaying] = useState(false);
-  const synth = window.speechSynthesis;
+  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
+  const synthRef = React.useRef<SpeechSynthesis | null>(null);
 
-  // Cleanup speech on component unmount or when the song lyrics change.
-  // This ensures that if a user generates a new version while the old one is
-  // playing, the old speech will stop.
+  // Check for support and initialize synth on mount.
   useEffect(() => {
+    if ('speechSynthesis' in window) {
+      setIsSpeechSupported(true);
+      synthRef.current = window.speechSynthesis;
+    }
+
+    // On component unmount, ensure any speech is stopped.
     return () => {
-      if (synth.speaking) {
-        synth.cancel();
+      if (synthRef.current?.speaking) {
+        synthRef.current.cancel();
       }
     };
-  }, [song.lyrics, synth]);
+  }, []);
+
+  // Effect to stop speech if a new song is generated while the old one is playing.
+  useEffect(() => {
+    return () => {
+      if (synthRef.current?.speaking) {
+        synthRef.current.cancel();
+        setIsPlaying(false);
+      }
+    };
+  }, [song.lyrics]);
 
   const handlePlayPause = useCallback(() => {
+    const synth = synthRef.current;
+    if (!synth) {
+      if (!isSpeechSupported) {
+        alert('Sorry, your browser does not support text-to-speech.');
+      } else {
+        alert('Speech synthesis is not ready. Please try again in a moment.');
+      }
+      return;
+    }
+
     if (isPlaying) {
       // If currently playing, stop the speech
       synth.cancel();
@@ -32,30 +57,52 @@ const SongResult: React.FC<SongResultProps> = ({ result }) => {
         synth.cancel();
       }
       
-      // Remove section headers like [Chorus] for a smoother listening experience
       const cleanedLyrics = song.lyrics.replace(/\[.*?\]/g, '\n').trim();
+      if (!cleanedLyrics) return; // Don't try to speak empty text
+      
       const utterance = new SpeechSynthesisUtterance(cleanedLyrics);
       
-      // Adjust speech properties to make it sound more like a performance
       utterance.pitch = 0.8; // A lower pitch
       utterance.rate = 1.1;  // A slightly faster pace
 
-      // When the speech ends, update the playing state
       utterance.onend = () => {
         setIsPlaying(false);
       };
       
-      // Handle potential errors with the speech synthesis
       utterance.onerror = (event) => {
         console.error('SpeechSynthesisUtterance.onerror', event);
         setIsPlaying(false);
-        alert('Sorry, text-to-speech is not supported or failed on your browser.');
-      }
+        let errorMessage = 'Sorry, text-to-speech failed.';
+        // The 'error' property on the event gives a more specific reason.
+        if (event.error) {
+            switch(event.error) {
+                case 'not-allowed':
+                    errorMessage = 'Speech synthesis was not allowed. Please check your browser permissions.';
+                    break;
+                case 'synthesis-failed':
+                    errorMessage = 'The speech synthesis engine failed. Please try again or use a different browser.';
+                    break;
+                // FIX: 'audio-capture' is not a valid SpeechSynthesisErrorCode. Replaced with 'audio-busy'.
+                case 'audio-busy':
+                     errorMessage = 'Could not capture audio. Please check if another app is using your audio output.';
+                     break;
+                case 'network':
+                    errorMessage = 'A network error occurred with the speech service. This can happen if your browser uses a cloud-based voice.';
+                    break;
+                case 'text-too-long':
+                    errorMessage = 'The lyrics are too long for the speech synthesis engine to handle.';
+                    break;
+                default:
+                    errorMessage = `An unknown speech error occurred: ${event.error}`;
+            }
+        }
+        alert(errorMessage);
+      };
 
       synth.speak(utterance);
       setIsPlaying(true);
     }
-  }, [isPlaying, song.lyrics, synth]);
+  }, [isPlaying, song.lyrics, isSpeechSupported]);
 
   return (
     <div className="w-full bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg animate-fade-in-up">
@@ -67,7 +114,8 @@ const SongResult: React.FC<SongResultProps> = ({ result }) => {
             <div className="flex items-center space-x-4">
               <button 
                 onClick={handlePlayPause}
-                className="text-purple-400 hover:text-purple-300 transition-colors focus:outline-none"
+                disabled={!isSpeechSupported}
+                className="text-purple-400 hover:text-purple-300 transition-colors focus:outline-none disabled:text-gray-500 disabled:cursor-not-allowed"
                 aria-label={isPlaying ? "Pause lyric preview" : "Play lyric preview"}
               >
                 {isPlaying ? (
@@ -84,7 +132,9 @@ const SongResult: React.FC<SongResultProps> = ({ result }) => {
               </button>
               <div className="flex-grow text-left">
                  <p className="text-lg font-semibold text-gray-200">Listen to the Lyrics</p>
-                 <p className="text-xs text-gray-400">Using browser text-to-speech</p>
+                 <p className="text-xs text-gray-400">
+                    {isSpeechSupported ? "Using browser text-to-speech" : "Text-to-speech not supported"}
+                 </p>
               </div>
             </div>
              <p className="text-xs text-center text-gray-500 mt-3">Note: Audio quality and voice may vary by browser.</p>
