@@ -1,5 +1,4 @@
-
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, Chat } from "@google/genai";
 import type { GenerationResult, GroundingSource, SongData } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -63,4 +62,35 @@ export async function generateSongFromKeywords(keywords: string): Promise<Genera
     song: songData,
     sources: sources,
   };
+}
+
+
+export function createModificationChat(initialSong: SongData, keywords: string): Chat {
+  const chat = ai.chats.create({
+    model: 'gemini-2.5-flash',
+    config: {
+      systemInstruction: `You are a legendary hip-hop producer and lyricist. You have just created a song based on the keywords: "${keywords}". The user will now give you feedback to refine it. Your task is to take their feedback and regenerate the song. Always respond with the complete, updated song in the specified JSON format. Do not add any conversational text outside of the JSON structure.`,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING, description: "The title of the hip-hop song." },
+          beatDescription: { type: Type.STRING, description: "A detailed description of the beat, including tempo, instruments, and mood." },
+          lyrics: { type: Type.STRING, description: "The full lyrics of the song, formatted with sections like [Chorus] and [Verse]." }
+        },
+        required: ["title", "beatDescription", "lyrics"]
+      },
+    },
+    history: [
+      {
+        role: "user",
+        parts: [{ text: `Here are the keywords to work with: ${keywords}` }],
+      },
+      {
+        role: "model",
+        parts: [{ text: JSON.stringify(initialSong) }]
+      }
+    ]
+  });
+  return chat;
 }

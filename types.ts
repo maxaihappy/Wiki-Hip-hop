@@ -1,4 +1,3 @@
-
 export interface SongData {
   title: string;
   beatDescription: string;
@@ -21,4 +20,13 @@ export enum LoadingStep {
   STORYTELLING = "Weaving the narrative...",
   GENERATING = "Dropping the beat...",
   DONE = "DONE",
+}
+
+export interface Part {
+  text: string;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'model';
+  parts: Part[];
 }
