@@ -1,3 +1,5 @@
+
+
 export interface SongData {
   title: string;
   beatDescription: string;
@@ -13,6 +15,18 @@ export interface GroundingSource {
 export interface GenerationResult {
   song: SongData;
   sources: GroundingSource[];
+}
+
+export interface SharedSong extends GenerationResult {
+  keywords: string;
+  createdAt: string;
+}
+
+export enum GenerationStatus {
+  IDLE = "IDLE",
+  SEARCHING = "SEARCHING",
+  GENERATING = "GENERATING",
+  DONE = "DONE",
 }
 
 export enum LoadingStep {

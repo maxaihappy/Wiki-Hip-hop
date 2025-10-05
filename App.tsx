@@ -1,99 +1,85 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import KeywordInput from './components/KeywordInput';
-import Loader from './components/Loader';
 import SongResult from './components/SongResult';
 import ChatPanel from './components/ChatPanel';
-import { generateSongFromKeywords, createModificationChat } from './services/geminiService';
-import { LoadingStep } from './types';
-import type { GenerationResult, ChatMessage, SongData } from './types';
+import SourceViewer from './components/SourceViewer';
+import SharingBoard from './components/SharingBoard';
+import { searchForSources, generateSongFromSearchResults, createModificationChat } from './services/geminiService';
+import { GenerationStatus } from './types';
+import type { GenerationResult, ChatMessage, SongData, GroundingSource, SharedSong } from './types';
 import type { Chat } from '@google/genai';
 
-
-// A new local component to display the main content of the song.
-const SongDetails: React.FC<{ result: GenerationResult, onDownload: () => void }> = ({ result, onDownload }) => {
-  const { song, sources } = result;
-  return (
-     <div className="space-y-8 animate-fade-in-up">
-      <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg">
-         <h3 className="text-2xl font-bold text-purple-300 mb-3">The Beat</h3>
-         <p className="text-gray-300 leading-relaxed">{song.beatDescription}</p>
-      </div>
-      
-      <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg">
-        <h3 className="text-2xl font-bold text-purple-300 mb-3">The Lyrics</h3>
-        <p className="text-gray-200 leading-loose whitespace-pre-wrap font-mono">{song.lyrics}</p>
-      </div>
-
-      {sources.length > 0 && (
-        <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg">
-          <h3 className="text-xl font-bold text-purple-300 mb-3">Sources</h3>
-          <ul className="list-disc list-inside space-y-2">
-            {sources.map((source, index) => (
-              <li key={index} className="text-gray-400">
-                <a href={source.uri} target="_blank" rel="noopener noreferrer" className="hover:text-purple-400 transition-colors underline">
-                  {source.title}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-       <div className="text-center pt-4">
-        <button
-          onClick={onDownload}
-          className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-full transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-500/50 shadow-lg"
-        >
-          Download Lyrics
-        </button>
-      </div>
+const LoadingPlaceholder: React.FC<{ title: string; message: string }> = ({ title, message }) => (
+  <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg h-full">
+    <h3 className="text-2xl font-bold text-purple-300 mb-3">{title}</h3>
+    <div className="flex items-center space-x-3 text-gray-400">
+      <div className="w-4 h-4 border-2 border-dashed border-gray-500 rounded-full animate-spin"></div>
+      <span>{message}</span>
     </div>
-  )
-}
+  </div>
+);
 
 const App: React.FC = () => {
   const [keywords, setKeywords] = useState('');
-  const [loadingStep, setLoadingStep] = useState<LoadingStep>(LoadingStep.IDLE);
+  const [trackLength, setTrackLength] = useState<number>(2);
+  const [generationStatus, setGenerationStatus] = useState<GenerationStatus>(GenerationStatus.IDLE);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerationResult | null>(null);
+  const [sources, setSources] = useState<GroundingSource[]>([]);
 
   const [chat, setChat] = useState<Chat | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [isChatting, setIsChatting] = useState(false);
 
-  const isLoading = loadingStep !== LoadingStep.IDLE && loadingStep !== LoadingStep.DONE;
+  const [songCount, setSongCount] = useState<number>(() => Number(localStorage.getItem('songCount')) || 0);
+  const [sharedSongs, setSharedSongs] = useState<SharedSong[]>(() => {
+    const saved = localStorage.getItem('sharedSongs');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  const isLoading = generationStatus === GenerationStatus.SEARCHING || generationStatus === GenerationStatus.GENERATING;
+
+  useEffect(() => {
+    localStorage.setItem('songCount', String(songCount));
+  }, [songCount]);
+
+  useEffect(() => {
+    localStorage.setItem('sharedSongs', JSON.stringify(sharedSongs));
+  }, [sharedSongs]);
 
   const handleGenerate = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!keywords.trim() || isLoading) return;
 
     setResult(null);
+    setSources([]);
     setError(null);
     setChat(null);
     setChatHistory([]);
     
     try {
-      setLoadingStep(LoadingStep.SEARCHING);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setLoadingStep(LoadingStep.STORYTELLING);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setLoadingStep(LoadingStep.GENERATING);
+      setGenerationStatus(GenerationStatus.SEARCHING);
+      const { searchResultsText, sources: foundSources } = await searchForSources(keywords);
+      setSources(foundSources);
 
-      const generatedResult = await generateSongFromKeywords(keywords);
+      setGenerationStatus(GenerationStatus.GENERATING);
+      const songData = await generateSongFromSearchResults(searchResultsText, trackLength);
       
-      setResult(generatedResult);
-      const modificationChat = createModificationChat(generatedResult.song, keywords);
-      setChat(modificationChat);
-      // We don't want to show the initial context messages in the UI
-      setChatHistory([]); 
+      const finalResult = { song: songData, sources: foundSources };
+      setResult(finalResult);
+      setSongCount(prevCount => prevCount + 1);
 
-      setLoadingStep(LoadingStep.DONE);
+      const modificationChat = createModificationChat(finalResult.song, keywords);
+      setChat(modificationChat);
+
+      setGenerationStatus(GenerationStatus.DONE);
     } catch (err) {
       console.error(err);
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(`Failed to generate song. ${errorMessage}`);
-      setLoadingStep(LoadingStep.IDLE);
+      setGenerationStatus(GenerationStatus.IDLE);
     }
-  }, [keywords, isLoading]);
+  }, [keywords, trackLength, isLoading]);
 
   const handleSendMessage = useCallback(async (message: string) => {
     if (!chat || isChatting || !message.trim()) return;
@@ -124,7 +110,7 @@ const App: React.FC = () => {
   }, [chat, isChatting]);
 
   const handleDownloadLyrics = useCallback(() => {
-    if (!result) return;
+    if (!result || !result.song) return;
     const { song, sources } = result;
     const content = `Title: ${song.title}\n\nBeat Description:\n${song.beatDescription}\n\nLyrics:\n${song.lyrics}\n\n\n---Sources---\n${sources.map(s => `${s.title}: ${s.uri}`).join('\n')}`;
     const blob = new Blob([content], { type: 'text/plain' });
@@ -138,6 +124,20 @@ const App: React.FC = () => {
     URL.revokeObjectURL(url);
   }, [result]);
 
+  const handleShareSong = useCallback(() => {
+    if (!result) return;
+    const newSharedSong: SharedSong = {
+      ...result,
+      keywords,
+      createdAt: new Date().toISOString(),
+    };
+    setSharedSongs(prev => [newSharedSong, ...prev]);
+    // Optional: scroll to sharing board
+    document.getElementById('sharing-board')?.scrollIntoView({ behavior: 'smooth' });
+  }, [result, keywords]);
+
+  const beatMessage = generationStatus === GenerationStatus.SEARCHING ? 'Waiting for sources...' : 'Creating the beat...';
+  const lyricsMessage = generationStatus === GenerationStatus.SEARCHING ? 'Waiting for sources...' : 'Writing the lyrics...';
 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans p-4 sm:p-8">
@@ -150,8 +150,14 @@ const App: React.FC = () => {
           animation: fade-in-up 0.5s ease-out forwards;
         }
       `}</style>
-      <div className="container mx-auto max-w-7xl">
-        <header className="text-center my-8 md:my-12">
+      <div className="container mx-auto max-w-7xl relative">
+        <header className="text-center my-8 md:my-12 relative">
+          <div className="absolute top-0 right-0 flex flex-col items-center gap-2">
+            <div className="bg-gray-800/50 backdrop-blur-sm text-xs text-center text-gray-300 p-2 rounded-lg border border-gray-700">
+              <span className="font-bold text-lg text-white">{songCount}</span>
+              <p>Songs Created</p>
+            </div>
+          </div>
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500 mb-2">
             Wiki Hip-hop
           </h1>
@@ -161,39 +167,75 @@ const App: React.FC = () => {
         </header>
 
         <main>
-          {result ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 md:gap-8 mt-8">
-              {/* Left Column: Beat, Lyrics, Sources */}
-              <div className="md:col-span-1">
-                 <SongDetails result={result} onDownload={handleDownloadLyrics} />
-              </div>
+          <div className="flex flex-col items-center max-w-4xl mx-auto">
+            <KeywordInput
+              keywords={keywords}
+              setKeywords={setKeywords}
+              trackLength={trackLength}
+              setTrackLength={setTrackLength}
+              onSubmit={handleGenerate}
+              isLoading={isLoading}
+            />
+          </div>
 
-              {/* Right Column: Preview and Chat */}
-              <div className="md:col-span-1 flex flex-col gap-8">
-                <SongResult result={result} />
-                <ChatPanel history={chatHistory} isChatting={isChatting} onSendMessage={handleSendMessage} />
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center max-w-4xl mx-auto">
-              <div className="w-full">
-                <KeywordInput
-                  keywords={keywords}
-                  setKeywords={setKeywords}
-                  onSubmit={handleGenerate}
-                  isLoading={isLoading}
-                />
-              </div>
-              <div className="w-full mt-12">
-                {isLoading && <Loader loadingStep={loadingStep} />}
-                {error && (
-                  <div className="bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-center animate-fade-in-up">
-                    <p><strong>Error:</strong> {error}</p>
-                  </div>
-                )}
-              </div>
+          {generationStatus === GenerationStatus.DONE && result && (
+             <div className="my-12 animate-fade-in-up max-w-2xl mx-auto">
+                <SongResult result={result} onDownloadLyrics={handleDownloadLyrics} onShare={handleShareSong} />
             </div>
           )}
+          
+          {error && (
+            <div className="w-full max-w-4xl mx-auto mt-12 bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-center animate-fade-in-up">
+              <p><strong>Error:</strong> {error}</p>
+            </div>
+          )}
+
+          {generationStatus !== GenerationStatus.IDLE && (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-8 animate-fade-in-up">
+                {/* Columns 1 & 2: Sources and Preview */}
+                <div className="lg:col-span-7">
+                  <SourceViewer 
+                    sources={sources}
+                    isLoading={generationStatus === GenerationStatus.SEARCHING} 
+                  />
+                </div>
+
+                {/* Column 3: The Beat */}
+                <div className="lg:col-span-2 flex flex-col">
+                   { (generationStatus === GenerationStatus.SEARCHING || generationStatus === GenerationStatus.GENERATING) ? (
+                      <LoadingPlaceholder title="The Beat" message={beatMessage} />
+                   ) : result ? (
+                       <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg h-full">
+                          <h3 className="text-xl font-bold text-purple-300 mb-3">The Beat</h3>
+                          <p className="text-gray-300 leading-relaxed text-sm">{result.song.beatDescription}</p>
+                      </div>
+                   ) : null}
+                </div>
+
+                 {/* Column 4: The Lyrics */}
+                <div className="lg:col-span-3 flex flex-col">
+                   { (generationStatus === GenerationStatus.SEARCHING || generationStatus === GenerationStatus.GENERATING) ? (
+                        <LoadingPlaceholder title="The Lyrics" message={lyricsMessage} />
+                   ) : result ? (
+                        <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg h-full flex flex-col">
+                            <h3 className="text-xl font-bold text-purple-300 mb-3">The Lyrics</h3>
+                            <div className="text-gray-200 leading-loose font-mono text-sm overflow-y-auto pr-2 flex-grow">
+                            {result.song.lyrics.split(/\n\s*\n/).map((stanza, index) => (
+                                <p key={index} className="mb-4 whitespace-pre-wrap">
+                                {stanza}
+                                </p>
+                            ))}
+                            </div>
+                        </div>
+                   ) : null }
+                </div>
+              </div>
+              {result && <ChatPanel history={chatHistory} isChatting={isChatting} onSendMessage={handleSendMessage} />}
+            </>
+          )}
+
+          <SharingBoard sharedSongs={sharedSongs} />
         </main>
         <footer className="text-center text-gray-600 mt-16 pb-4">
           <p>Powered by Gemini. Crafted for creators.</p>
