@@ -29,9 +29,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ history, isChatting, onSendMessag
     <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-2xl flex flex-col h-full max-h-[75vh] shadow-lg">
       <h3 className="text-xl font-bold text-purple-300 p-4 border-b border-gray-700 flex-shrink-0">Refine Your Track</h3>
       <div className="flex-grow p-4 overflow-y-auto space-y-4">
-        {history.filter(msg => msg.role === 'user').map((message, index) => (
-          <div key={index} className="flex justify-end animate-fade-in-up">
-            <div className="bg-purple-600 text-white p-3 rounded-lg max-w-xs shadow">
+        {history.map((message, index) => (
+          <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
+            <div className={`${message.role === 'user' ? 'bg-purple-600' : 'bg-gray-700'} text-white p-3 rounded-lg max-w-xs shadow`}>
               {message.parts[0].text}
             </div>
           </div>

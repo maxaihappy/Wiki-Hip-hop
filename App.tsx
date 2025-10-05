@@ -107,12 +107,17 @@ const App: React.FC = () => {
       const newSongData = JSON.parse(response.text) as SongData;
 
       setResult(prev => prev ? { ...prev, song: newSongData } : null);
+      
+      if (newSongData.comment) {
+        const modelMessage: ChatMessage = { role: 'model', parts: [{ text: newSongData.comment }] };
+        setChatHistory(prev => [...prev, modelMessage]);
+      }
 
     } catch (err) {
       console.error(err);
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      // For now, log error. A toast notification could be better UX.
-      alert(`Failed to refine song: ${errorMessage}`);
+      const errorResponseMessage: ChatMessage = { role: 'model', parts: [{ text: `Sorry, I hit a snag and couldn't update the track. Please try again. Error: ${errorMessage}`}]};
+      setChatHistory(prev => [...prev, errorResponseMessage]);
     } finally {
       setIsChatting(false);
     }

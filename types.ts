@@ -2,6 +2,7 @@ export interface SongData {
   title: string;
   beatDescription: string;
   lyrics: string;
+  comment?: string;
 }
 
 export interface GroundingSource {
