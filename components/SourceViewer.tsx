@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import type { GroundingSource } from '../types';
 
 interface SourceViewerProps {
@@ -112,43 +113,45 @@ const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading }) => {
   const activeSource = sortedSources.find(s => s.uri === activeSourceUri);
   const embeddable = activeSource && canBeEmbedded(activeSource.uri);
 
+  const fullscreenModal = (
+    <div className="fixed inset-0 bg-gray-900/90 backdrop-blur-sm z-50 py-8 px-20 sm:px-40 md:px-48 animate-fade-in-up">
+        <div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl w-full h-full flex flex-col overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b border-gray-700 flex-shrink-0">
+                <h3 className="text-xl font-bold text-purple-300 truncate pr-4" title={activeSource?.title}>
+                    {activeSource?.title || 'Wiki Preview'}
+                </h3>
+                <button
+                    onClick={() => setIsFullScreen(false)}
+                    className="p-2 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white transition-colors flex-shrink-0"
+                    aria-label="Close fullscreen preview"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div className="flex-grow min-h-0">
+                {activeSource ? (
+                    embeddable ? (
+                        <iframe
+                            src={activeSource.uri}
+                            className="w-full h-full bg-white"
+                            title={`Wiki Preview: ${activeSource.title}`}
+                            sandbox="allow-scripts allow-same-origin"
+                        />
+                    ) : (
+                        <PreviewFallback url={activeSource.uri} />
+                    )
+                ) : null}
+            </div>
+        </div>
+    </div>
+  );
+
   return (
     <>
-      {/* Fullscreen Modal - Styled as a floating overlay */}
-      {isFullScreen && (
-          <div className="fixed inset-0 bg-gray-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in-up">
-              <div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden">
-                  <div className="flex justify-between items-center p-4 border-b border-gray-700 flex-shrink-0">
-                      <h3 className="text-xl font-bold text-purple-300 truncate pr-4" title={activeSource?.title}>
-                          {activeSource?.title || 'Wiki Preview'}
-                      </h3>
-                      <button
-                          onClick={() => setIsFullScreen(false)}
-                          className="p-2 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white transition-colors flex-shrink-0"
-                          aria-label="Close fullscreen preview"
-                      >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                      </button>
-                  </div>
-                  <div className="flex-grow min-h-0">
-                      {activeSource ? (
-                          embeddable ? (
-                              <iframe
-                                  src={activeSource.uri}
-                                  className="w-full h-full bg-white"
-                                  title={`Wiki Preview: ${activeSource.title}`}
-                                  sandbox="allow-scripts allow-same-origin"
-                              />
-                          ) : (
-                              <PreviewFallback url={activeSource.uri} />
-                          )
-                      ) : null}
-                  </div>
-              </div>
-          </div>
-      )}
+      {/* Fullscreen Modal - Rendered into a portal to escape stacking context issues */}
+      {isFullScreen && createPortal(fullscreenModal, document.body)}
 
       {/* Normal View */}
       <div className="flex flex-col gap-8 h-full">
