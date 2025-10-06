@@ -11,6 +11,42 @@ import { GenerationStatus } from './types';
 import type { GenerationResult, ChatMessage, SongData, GroundingSource, SharedSong } from './types';
 import type { Chat } from '@google/genai';
 
+function getFriendlyErrorMessage(error: unknown): string {
+  const defaultMessage = "An unexpected hiccup occurred. Please try again. If the problem continues, try adjusting your keywords.";
+
+  if (!(error instanceof Error)) {
+    return defaultMessage;
+  }
+
+  const message = error.message.toLowerCase();
+
+  if (message.includes("api key") || message.includes("api_key")) {
+    return "There's a configuration issue with the app's connection to the creative AI. Our team is likely already addressing it, please try again later.";
+  }
+  
+  if (message.includes("fetch") || message.includes("network")) {
+    return "We're having trouble connecting to the internet to research your topic. Please check your connection and try again.";
+  }
+  
+  if (message.includes("429") || message.includes("rate limit") || message.includes("resource exhausted")) {
+    return "The studio is getting a lot of requests right now! Please wait a moment before trying again.";
+  }
+
+  if (message.includes("400") || message.includes("safety") || message.includes("blocked")) {
+     return "Your request couldn't be processed, likely due to our safety filters. Please try using different, more general keywords.";
+  }
+  
+  if (message.includes("500") || message.includes("503") || message.includes("internal server error") || message.includes("service unavailable")) {
+    return "The creative AI is experiencing some technical difficulties on its end. Please try again in a little while.";
+  }
+  
+  if (message.includes("json")) {
+      return "The AI gave an unexpected response. This can happen with very creative or abstract topics. Trying a different angle with your keywords might work!";
+  }
+
+  return defaultMessage;
+}
+
 const LoadingPlaceholder: React.FC<{ title: string; message: string }> = ({ title, message }) => (
   <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg h-full">
     <h3 className="text-2xl font-bold text-purple-300 mb-3">{title}</h3>
@@ -19,6 +55,13 @@ const LoadingPlaceholder: React.FC<{ title: string; message: string }> = ({ titl
       <span>{message}</span>
     </div>
   </div>
+);
+
+const ErrorPlaceholder: React.FC<{ title: string; message: string }> = ({ title, message }) => (
+    <div className="relative bg-red-900/30 backdrop-blur-sm p-6 rounded-2xl border border-red-700/50 shadow-lg h-full text-red-200">
+      <h3 className="text-xl font-bold text-red-300 mb-3">{title}</h3>
+      <p className="text-sm">{message}</p>
+    </div>
 );
 
 const App: React.FC = () => {
@@ -91,9 +134,8 @@ const App: React.FC = () => {
       setGenerationStatus(GenerationStatus.DONE);
     } catch (err) {
       console.error(err);
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      setError(`Failed to generate song. ${errorMessage}`);
-      setGenerationStatus(GenerationStatus.IDLE);
+      setError(getFriendlyErrorMessage(err));
+      setGenerationStatus(GenerationStatus.DONE);
     }
   }, [keywords, trackLength, isLoading]);
 
@@ -117,8 +159,8 @@ const App: React.FC = () => {
 
     } catch (err) {
       console.error(err);
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      const errorResponseMessage: ChatMessage = { role: 'model', parts: [{ text: `Sorry, I hit a snag and couldn't update the track. Please try again. Error: ${errorMessage}`}]};
+      const friendlyError = getFriendlyErrorMessage(err);
+      const errorResponseMessage: ChatMessage = { role: 'model', parts: [{ text: `Sorry, I hit a snag and couldn't update the track. ${friendlyError}`}]};
       setChatHistory(prev => [...prev, errorResponseMessage]);
     } finally {
       setIsChatting(false);
@@ -243,6 +285,8 @@ const App: React.FC = () => {
                           <h3 className="text-xl font-bold text-purple-300 mb-3">The Beat</h3>
                           <p className="text-gray-300 leading-relaxed text-sm">{result.song.beatDescription}</p>
                       </div>
+                   ) : error ? (
+                      <ErrorPlaceholder title="Generation Failed" message="Could not create the beat." />
                    ) : null}
                 </div>
 
@@ -261,6 +305,8 @@ const App: React.FC = () => {
                             ))}
                             </div>
                         </div>
+                   ) : error ? (
+                        <ErrorPlaceholder title="Generation Failed" message="Could not write the lyrics." />
                    ) : null }
                 </div>
               </div>

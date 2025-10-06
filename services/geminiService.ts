@@ -113,6 +113,51 @@ export async function searchForSources(
   if (!process.env.API_KEY) {
     throw new Error("API key is missing. Please set the API_KEY environment variable.");
   }
+
+  const primaryKeyword = keywords.split(',')[0].trim();
+
+  if (primaryKeyword) {
+    try {
+      // Use Wikipedia API to find a relevant article
+      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(primaryKeyword)}&limit=1&format=json&origin=*`;
+      const searchResponse = await fetch(searchUrl);
+      if (!searchResponse.ok) throw new Error(`Wikipedia search API failed with status ${searchResponse.status}`);
+      
+      const searchData = await searchResponse.json();
+
+      if (searchData.query?.search?.length > 0) {
+        const pageTitle = searchData.query.search[0].title;
+        const encodedTitle = encodeURIComponent(pageTitle.replace(/ /g, '_'));
+        
+        // Fetch the summary and canonical URL
+        const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodedTitle}`;
+        const summaryResponse = await fetch(summaryUrl);
+        if (!summaryResponse.ok) throw new Error(`Wikipedia summary API failed with status ${summaryResponse.status}`);
+        
+        const summaryData = await summaryResponse.json();
+
+        if (summaryData.extract && summaryData.content_urls?.desktop?.page) {
+          const source: GroundingSource = {
+            uri: summaryData.content_urls.desktop.page,
+            title: summaryData.title,
+          };
+
+          onPreviewSourceFound(source);
+
+          return {
+            searchResultsText: summaryData.extract,
+            sources: [source],
+          };
+        }
+      }
+    } catch (error) {
+      console.warn("Wikipedia search failed, falling back to Gemini search.", error);
+      // Fall through to the Gemini search logic below
+    }
+  }
+
+  // Fallback to Gemini search if Wikipedia fails or there's no primary keyword
+  console.log("No definitive Wikipedia article found. Falling back to Gemini search for broader context.");
   
   const searchPrompt = `Based on Google Search results, provide a comprehensive summary and definitions for the following keywords: ${keywords}. Focus on information that can be woven into a creative narrative.`;
   
