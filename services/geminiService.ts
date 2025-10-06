@@ -8,12 +8,112 @@ interface SearchResult {
   sources: GroundingSource[];
 }
 
-export async function searchForSources(keywords: string): Promise<SearchResult> {
+function cleanAndProcessUrl(source: GroundingSource, keywords: string): GroundingSource {
+    try {
+      const url = new URL(source.uri);
+      // Handle standard google redirects
+      if (url.hostname.includes('google.com') && url.pathname === '/url') {
+        const actualUrl = url.searchParams.get('q');
+        if (actualUrl) {
+          return { ...source, uri: actualUrl };
+        }
+      }
+      // Handle Vertex AI grounding redirects by reconstructing the Wikipedia URL from the title
+      if (url.hostname.includes('vertexaisearch.cloud.google.com')) {
+        const lowerTitle = source.title?.toLowerCase() || '';
+        if (lowerTitle.includes('wikipedia')) {
+          // Attempt to extract the core page name by cleaning common affixes
+          let pageTitle = source.title
+            .replace(/ - Wikipedia$/i, '')
+            .replace(/^Wikipedia: /i, '');
+          
+          const cleanedPageTitleLower = pageTitle.trim().toLowerCase();
+          // If cleaning results in a generic term, it's a generic link.
+          // In this case, we construct the URL from the user's primary keyword.
+          if (cleanedPageTitleLower === 'wikipedia' || cleanedPageTitleLower === 'wikipedia.org') {
+              const primaryKeyword = keywords.split(',')[0].trim();
+              if (primaryKeyword) { // Avoid using an empty keyword
+                  pageTitle = primaryKeyword;
+              }
+          }
+          
+          const processedPageTitle = pageTitle.trim().replace(/\s/g, '_');
+          const wikiUrl = `https://en.wikipedia.org/wiki/${processedPageTitle}`;
+          return { ...source, uri: wikiUrl };
+        }
+      }
+    } catch (e) {
+      console.warn(`Could not parse source URL for cleaning: ${source.uri}`, e);
+    }
+    return source;
+}
+
+function deDuplicateSources(sources: GroundingSource[]): GroundingSource[] {
+    const uniqueSources: GroundingSource[] = [];
+    const seenUrls = new Set<string>();
+
+    for (const source of sources) {
+        try {
+            const url = new URL(source.uri);
+            // Normalize by removing 'www.' and trailing slashes from the pathname
+            const normalizedHostname = url.hostname.startsWith('www.') ? url.hostname.substring(4) : url.hostname;
+            const normalizedPathname = url.pathname.length > 1 && url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
+            const normalized = `${normalizedHostname}${normalizedPathname}`;
+            
+            if (!seenUrls.has(normalized)) {
+                seenUrls.add(normalized);
+                uniqueSources.push(source);
+            }
+        } catch (e) {
+            // Fallback for invalid URLs: use the raw URI for de-duplication
+            if (!seenUrls.has(source.uri)) {
+                seenUrls.add(source.uri);
+                uniqueSources.push(source);
+            }
+            console.warn(`Could not parse source URL for normalization: ${source.uri}`, e);
+        }
+    }
+    return uniqueSources;
+}
+
+function sortSources(sources: GroundingSource[], keywords: string): GroundingSource[] {
+    const sorted = [...sources];
+    sorted.sort((a, b) => {
+        const aIsWiki = a.uri.includes('wikipedia.org');
+        const bIsWiki = b.uri.includes('wikipedia.org');
+
+        if (aIsWiki && !bIsWiki) return -1;
+        if (!aIsWiki && bIsWiki) return 1;
+        
+        if (aIsWiki && bIsWiki) {
+            const aTitle = a.title.toLowerCase();
+            const bTitle = b.title.toLowerCase();
+            // Use the first keyword as the primary term for relevance
+            const mainKeyword = keywords.split(',')[0].trim().toLowerCase();
+            
+            // A simple heuristic: prefer titles that start with the main keyword
+            const aIsPrimary = aTitle.startsWith(mainKeyword);
+            const bIsPrimary = bTitle.startsWith(mainKeyword);
+
+            if (aIsPrimary && !bIsPrimary) return -1;
+            if (!aIsPrimary && bIsPrimary) return 1;
+        }
+
+        // Keep original order if no other criteria match
+        return 0;
+    });
+    return sorted;
+}
+
+
+export async function searchForSources(
+  keywords: string,
+  onPreviewSourceFound: (source: GroundingSource) => void
+): Promise<SearchResult> {
   if (!process.env.API_KEY) {
     throw new Error("API key is missing. Please set the API_KEY environment variable.");
   }
   
-  // Step 1: Search for information on the keywords using Google Search grounding
   const searchPrompt = `Based on Google Search results, provide a comprehensive summary and definitions for the following keywords: ${keywords}. Focus on information that can be woven into a creative narrative.`;
   
   const searchResponse = await ai.models.generateContent({
@@ -26,37 +126,44 @@ export async function searchForSources(keywords: string): Promise<SearchResult> 
 
   const searchResultsText = searchResponse.text;
   const groundingChunks = searchResponse.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-  const allSources: GroundingSource[] = groundingChunks
-    .map(chunk => chunk.web)
-    .filter((web): web is { uri: string; title: string; } => web !== undefined && web.uri !== undefined && web.title !== undefined);
 
-  // De-duplicate sources based on a normalized URL
-  const uniqueSources: GroundingSource[] = [];
-  const seenUrls = new Set<string>();
+  if (groundingChunks.length > 0) {
+    // Quick pass to find and dispatch a preview source for immediate UI update
+    const primaryKeyword = keywords.split(',')[0].trim().toLowerCase();
+    let bestCandidate: { source: GroundingSource, score: number } | null = null;
 
-  for (const source of allSources) {
-    try {
-      const url = new URL(source.uri);
-      // Normalize by removing 'www.' and trailing slashes from the pathname
-      const normalizedHostname = url.hostname.startsWith('www.') ? url.hostname.substring(4) : url.hostname;
-      const normalizedPathname = url.pathname.length > 1 && url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
-      const normalized = `${normalizedHostname}${normalizedPathname}`;
-      
-      if (!seenUrls.has(normalized)) {
-        seenUrls.add(normalized);
-        uniqueSources.push(source);
-      }
-    } catch (e) {
-      // Fallback for invalid URLs: use the raw URI for de-duplication
-      if (!seenUrls.has(source.uri)) {
-        seenUrls.add(source.uri);
-        uniqueSources.push(source);
-      }
-      console.warn(`Could not parse source URL for normalization: ${source.uri}`, e);
+    for (const chunk of groundingChunks) {
+        const webSource = chunk.web;
+        if (webSource?.title && webSource.uri) {
+            const lowerTitle = webSource.title.toLowerCase();
+            if (lowerTitle.includes('wikipedia')) {
+                let score = 1; // Base score for being wikipedia
+                if (lowerTitle.startsWith(primaryKeyword)) score = 3; // Best: title starts with keyword
+                else if (lowerTitle.includes(primaryKeyword)) score = 2; // Good: title contains keyword
+
+                if (!bestCandidate || score > bestCandidate.score) {
+                    bestCandidate = { source: webSource as GroundingSource, score };
+                }
+            }
+        }
+    }
+
+    if (bestCandidate) {
+        const cleanedPreviewSource = cleanAndProcessUrl(bestCandidate.source, keywords);
+        onPreviewSourceFound(cleanedPreviewSource);
     }
   }
 
-  return { searchResultsText, sources: uniqueSources };
+  // Full processing for all sources
+  const allSources: GroundingSource[] = groundingChunks
+    .map(chunk => chunk.web)
+    .filter((web): web is GroundingSource => !!web?.uri && !!web?.title);
+  
+  const cleanedSources = allSources.map(source => cleanAndProcessUrl(source, keywords));
+  const uniqueSources = deDuplicateSources(cleanedSources);
+  const sortedSources = sortSources(uniqueSources, keywords);
+
+  return { searchResultsText, sources: sortedSources };
 }
 
 export async function generateSongFromSearchResults(searchResultsText: string, trackLengthInMinutes: number): Promise<SongData> {

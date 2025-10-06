@@ -4,6 +4,8 @@ import SongResult from './components/SongResult';
 import ChatPanel from './components/ChatPanel';
 import SourceViewer from './components/SourceViewer';
 import SharingBoard from './components/SharingBoard';
+import AuthScreen from './components/AuthScreen';
+import FlippingCounter from './components/FlippingCounter';
 import { searchForSources, generateSongFromSearchResults, createModificationChat } from './services/geminiService';
 import { GenerationStatus } from './types';
 import type { GenerationResult, ChatMessage, SongData, GroundingSource, SharedSong } from './types';
@@ -20,6 +22,10 @@ const LoadingPlaceholder: React.FC<{ title: string; message: string }> = ({ titl
 );
 
 const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    // Check session storage on initial load to maintain session
+    return sessionStorage.getItem('wiki-hiphop-auth') === 'true';
+  });
   const [keywords, setKeywords] = useState('');
   const [trackLength, setTrackLength] = useState<number>(2);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>(GenerationStatus.IDLE);
@@ -47,6 +53,11 @@ const App: React.FC = () => {
     localStorage.setItem('sharedSongs', JSON.stringify(sharedSongs));
   }, [sharedSongs]);
 
+  const handleAuthSuccess = () => {
+    sessionStorage.setItem('wiki-hiphop-auth', 'true');
+    setIsAuthenticated(true);
+  };
+
   const handleGenerate = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!keywords.trim() || isLoading) return;
@@ -59,7 +70,12 @@ const App: React.FC = () => {
     
     try {
       setGenerationStatus(GenerationStatus.SEARCHING);
-      const { searchResultsText, sources: foundSources } = await searchForSources(keywords);
+      
+      const handlePreviewSource = (previewSource: GroundingSource) => {
+        setSources([previewSource]);
+      };
+
+      const { searchResultsText, sources: foundSources } = await searchForSources(keywords, handlePreviewSource);
       setSources(foundSources);
 
       setGenerationStatus(GenerationStatus.GENERATING);
@@ -136,6 +152,10 @@ const App: React.FC = () => {
     document.getElementById('sharing-board')?.scrollIntoView({ behavior: 'smooth' });
   }, [result, keywords]);
 
+  if (!isAuthenticated) {
+    return <AuthScreen onSuccess={handleAuthSuccess} />;
+  }
+
   const beatMessage = generationStatus === GenerationStatus.SEARCHING ? 'Waiting for sources...' : 'Creating the beat...';
   const lyricsMessage = generationStatus === GenerationStatus.SEARCHING ? 'Waiting for sources...' : 'Writing the lyrics...';
 
@@ -149,13 +169,26 @@ const App: React.FC = () => {
         .animate-fade-in-up {
           animation: fade-in-up 0.5s ease-out forwards;
         }
+        @keyframes flip-down {
+          from {
+            transform: rotateX(90deg);
+          }
+          to {
+            transform: rotateX(0);
+          }
+        }
+        .animate-flip-down {
+          display: inline-block;
+          transform-origin: top center;
+          animation: flip-down 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+        }
       `}</style>
       <div className="container mx-auto max-w-7xl relative">
         <header className="text-center my-8 md:my-12 relative">
-          <div className="absolute top-0 right-0 flex flex-col items-center gap-2">
-            <div className="bg-gray-800/50 backdrop-blur-sm text-xs text-center text-gray-300 p-2 rounded-lg border border-gray-700">
-              <span className="font-bold text-lg text-white">{songCount}</span>
-              <p>Songs Created</p>
+          <div className="absolute top-0 right-0">
+            <div className="bg-gray-800/50 backdrop-blur-sm p-2 rounded-lg border border-gray-700 flex items-center gap-3">
+              <FlippingCounter count={songCount} />
+              <p className="text-gray-300 text-xs md:text-sm font-semibold pr-2 leading-tight text-center">Songs<br/>Created</p>
             </div>
           </div>
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500 mb-2">
@@ -192,17 +225,17 @@ const App: React.FC = () => {
 
           {generationStatus !== GenerationStatus.IDLE && (
             <>
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-8 animate-fade-in-up">
-                {/* Columns 1 & 2: Sources and Preview */}
-                <div className="lg:col-span-7">
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 mt-8 animate-fade-in-up">
+                {/* Column 1: Sources and Preview */}
+                <div className="lg:col-span-2">
                   <SourceViewer 
                     sources={sources}
                     isLoading={generationStatus === GenerationStatus.SEARCHING} 
                   />
                 </div>
 
-                {/* Column 3: The Beat */}
-                <div className="lg:col-span-2 flex flex-col">
+                {/* Column 2: The Beat */}
+                <div className="flex flex-col lg:col-span-1">
                    { (generationStatus === GenerationStatus.SEARCHING || generationStatus === GenerationStatus.GENERATING) ? (
                       <LoadingPlaceholder title="The Beat" message={beatMessage} />
                    ) : result ? (
@@ -213,8 +246,8 @@ const App: React.FC = () => {
                    ) : null}
                 </div>
 
-                 {/* Column 4: The Lyrics */}
-                <div className="lg:col-span-3 flex flex-col">
+                 {/* Column 3: The Lyrics */}
+                <div className="flex flex-col lg:col-span-2">
                    { (generationStatus === GenerationStatus.SEARCHING || generationStatus === GenerationStatus.GENERATING) ? (
                         <LoadingPlaceholder title="The Lyrics" message={lyricsMessage} />
                    ) : result ? (
