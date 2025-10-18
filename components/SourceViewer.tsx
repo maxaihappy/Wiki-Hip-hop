@@ -5,6 +5,7 @@ import type { GroundingSource } from '../types';
 interface SourceViewerProps {
   sources: GroundingSource[];
   isLoading: boolean;
+  keywords: string;
 }
 
 const whitelistedDomains = ['wikipedia.org'];
@@ -40,39 +41,22 @@ const PreviewFallback: React.FC<{ url: string }> = ({ url }) => (
 );
 
 
-const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading }) => {
-  const [activeSourceUri, setActiveSourceUri] = useState<string | null>(null);
+const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading, keywords }) => {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [iframeKey, setIframeKey] = useState(1);
 
-  const sortedSources = useMemo(() => {
-    if (!sources) return [];
-    // The sorting logic now in geminiService handles relevance, this just ensures an embeddable one is picked first if relevance is equal.
-    return [...sources].sort((a, b) => {
-      const aCanBeEmbedded = canBeEmbedded(a.uri);
-      const bCanBeEmbedded = canBeEmbedded(b.uri);
-      if (aCanBeEmbedded && !bCanBeEmbedded) return -1;
-      if (!aCanBeEmbedded && bCanBeEmbedded) return 1;
-      return 0;
-    });
+  const primarySource = useMemo(() => {
+    if (!sources || sources.length === 0) return null;
+    // The service already sorts Wikipedia to the top, so we grab that as the primary source.
+    return sources.find(s => s.uri.includes('wikipedia.org')) || sources[0];
   }, [sources]);
-
-  useEffect(() => {
-    if (sortedSources && sortedSources.length > 0) {
-      if (!activeSourceUri || !sortedSources.some(s => s.uri === activeSourceUri)) {
-        setActiveSourceUri(sortedSources[0].uri);
-      }
-    } else {
-      setActiveSourceUri(null);
-    }
-  }, [sortedSources, activeSourceUri]);
   
-  // Increment key whenever the active source changes to ensure a clean reload in the normal view.
+  // Increment key whenever the primary source changes to ensure a clean reload.
   useEffect(() => {
-    if (activeSourceUri) {
+    if (primarySource) {
         setIframeKey(prevKey => prevKey + 1);
     }
-  }, [activeSourceUri]);
+  }, [primarySource]);
 
   const renderLoadingState = () => (
      <div className="flex flex-col gap-8 h-full">
@@ -110,15 +94,14 @@ const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading }) => {
     );
   }
   
-  const activeSource = sortedSources.find(s => s.uri === activeSourceUri);
-  const embeddable = activeSource && canBeEmbedded(activeSource.uri);
+  const embeddable = primarySource && canBeEmbedded(primarySource.uri);
 
   const fullscreenModal = (
     <div className="fixed inset-0 bg-gray-900/90 backdrop-blur-sm z-50 py-8 px-20 sm:px-40 md:px-48 animate-fade-in-up">
         <div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl w-full h-full flex flex-col overflow-hidden">
             <div className="flex justify-between items-center p-4 border-b border-gray-700 flex-shrink-0">
-                <h3 className="text-xl font-bold text-purple-300 truncate pr-4" title={activeSource?.title}>
-                    {activeSource?.title || 'Wiki Preview'}
+                <h3 className="text-xl font-bold text-purple-300 truncate pr-4" title={primarySource?.title}>
+                    {primarySource?.title || 'Wiki Preview'}
                 </h3>
                 <button
                     onClick={() => setIsFullScreen(false)}
@@ -131,16 +114,16 @@ const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading }) => {
                 </button>
             </div>
             <div className="flex-grow min-h-0">
-                {activeSource ? (
+                {primarySource ? (
                     embeddable ? (
                         <iframe
-                            src={activeSource.uri}
+                            src={primarySource.uri}
                             className="w-full h-full bg-white"
-                            title={`Wiki Preview: ${activeSource.title}`}
+                            title={`Wiki Preview: ${primarySource.title}`}
                             sandbox="allow-scripts allow-same-origin"
                         />
                     ) : (
-                        <PreviewFallback url={activeSource.uri} />
+                        <PreviewFallback url={primarySource.uri} />
                     )
                 ) : null}
             </div>
@@ -169,17 +152,17 @@ const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading }) => {
               </button>
           </div>
           <div className="flex-grow min-h-0 rounded-lg overflow-hidden">
-              {activeSource ? (
+              {primarySource ? (
                   embeddable ? (
                       <iframe
                           key={iframeKey}
-                          src={activeSource.uri}
+                          src={primarySource.uri}
                           className="w-full h-full bg-white"
                           title={`Wiki Preview`}
                           sandbox="allow-scripts allow-same-origin"
                       />
                   ) : (
-                      <PreviewFallback url={activeSource.uri} />
+                      <PreviewFallback url={primarySource.uri} />
                   )
               ) : (
                   <div className="flex items-center justify-center h-full text-gray-400">
@@ -192,33 +175,41 @@ const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading }) => {
         <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-48 flex-shrink-0">
           <h3 className="text-xl font-bold text-purple-300 mb-4 flex-shrink-0">All Sources</h3>
           <div className="overflow-y-auto pr-2 flex-grow">
-              <ul className="space-y-2">
-              {sortedSources.map((source) => (
-                  <li key={source.uri} className="flex items-center gap-2">
-                    <button
-                        onClick={() => setActiveSourceUri(source.uri)}
-                        className={`flex-grow text-left p-2.5 rounded-lg transition-colors text-sm truncate ${
-                        activeSourceUri === source.uri
-                            ? 'bg-purple-600 text-white font-semibold shadow-md'
-                            : 'text-gray-300 hover:bg-gray-700/50'
-                        }`}
-                        title={source.title}
+              <ul className="space-y-3">
+                {primarySource && (
+                  <li key="wiki-source">
+                    <a
+                      href={primarySource.uri}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 w-full text-left p-2.5 rounded-lg transition-colors text-sm font-medium text-gray-300 hover:bg-gray-700/50"
+                      title={primarySource.title}
                     >
-                        {source.title}
-                    </button>
-                    <a 
-                        href={source.uri} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="p-2.5 rounded-lg text-gray-400 hover:bg-gray-700/50 hover:text-white transition-colors flex-shrink-0"
-                        aria-label={`Open ${source.title} in a new tab`}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12.316 3.655c-1.956.368-3.32 1.444-4.576 4.148-.68 1.48-1.036 3.028-1.036 4.348s.356 2.588 1.036 4.028c1.256 2.704 2.62 3.78 4.576 4.148 2.056.388 3.8-.124 5.376-1.54 1.436-1.296 2.276-3.032 2.276-5.636 0-2.43-.84-4.148-2.276-5.556-1.576-1.416-3.32-1.928-5.376-1.928zM3 3h1.8v1.8H3V3zm0 3.6h1.8v1.8H3v-1.8zm0 3.6h1.8v1.8H3v-1.8zm0 3.6h1.8v1.8H3v-1.8zm0 3.6h1.8v1.8H3v-1.8zM19.2 3h1.8v1.8h-1.8V3zm0 3.6h1.8v1.8h-1.8v-1.8zm0 3.6h1.8v1.8h-1.8v-1.8zm0 3.6h1.8v1.8h-1.8v-1.8zm0 3.6h1.8v1.8h-1.8v-1.8z"></path></svg>
+                      <span className="truncate flex-grow">Wikipedia</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
                     </a>
                   </li>
-              ))}
+                )}
+                {keywords && (
+                  <li key="youtube-search">
+                    <a
+                      href={`https://www.youtube.com/results?search_query=${encodeURIComponent(keywords)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 w-full text-left p-2.5 rounded-lg transition-colors text-sm font-medium text-gray-300 hover:bg-gray-700/50"
+                      title={`Search on YouTube for "${keywords}"`}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M10,15l5.19-3L10,9v6m11.56-7.83c-0.25-0.95-1.28-1.67-2.48-1.72C18.06,5.33,12,5.33,12,5.33s-6.06,0-7.08,0.15 C3.72,5.5,2.69,6.22,2.44,7.17C2.17,8.12,2.17,12,2.17,12s0,3.88,0.27,4.83c0.25,0.95,1.28,1.67,2.48,1.72C6.06,18.67,12,18.67,12,18.67 s6.06,0,7.08-0.15c1.2-0.05,2.23-0.77,2.48-1.72C21.83,15.88,21.83,12,21.83,12S21.83,8.12,21.56,7.17z"/></svg>
+                      <span className="truncate flex-grow">YouTube</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  </li>
+                )}
               </ul>
           </div>
         </div>

@@ -221,6 +221,17 @@ const App: React.FC = () => {
     document.getElementById('sharing-board')?.scrollIntoView({ behavior: 'smooth' });
   }, [result, keywords]);
 
+  const handleSelectSharedSong = useCallback((song: SharedSong) => {
+    setResult(song);
+    setSources(song.sources);
+    setKeywords(song.keywords);
+    setGenerationStatus(GenerationStatus.DONE);
+    setChat(null);
+    setChatHistory([]);
+    setError(null);
+    document.querySelector('main')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
   const beatMessage = generationStatus === GenerationStatus.SEARCHING ? 'Waiting for sources...' : 'Creating the beat...';
   const lyricsMessage = generationStatus === GenerationStatus.SEARCHING ? 'Waiting for sources...' : 'Writing the lyrics...';
 
@@ -296,7 +307,8 @@ const App: React.FC = () => {
                 <div className="lg:col-span-2 h-[75vh]">
                   <SourceViewer 
                     sources={sources}
-                    isLoading={generationStatus === GenerationStatus.SEARCHING} 
+                    isLoading={generationStatus === GenerationStatus.SEARCHING}
+                    keywords={keywords} 
                   />
                 </div>
 
@@ -340,7 +352,7 @@ const App: React.FC = () => {
             </>
           )}
 
-          <SharingBoard sharedSongs={sharedSongs} />
+          <SharingBoard sharedSongs={sharedSongs} onSelectSong={handleSelectSharedSong} />
         </main>
         {toastMessage && (
           <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-yellow-500 text-gray-900 font-bold py-3 px-6 rounded-full shadow-lg animate-fade-in-up z-50">

@@ -3,6 +3,7 @@ import type { SharedSong } from '../types';
 
 interface SharingBoardProps {
   sharedSongs: SharedSong[];
+  onSelectSong: (song: SharedSong) => void;
 }
 
 const formatDate = (isoString: string) => {
@@ -12,7 +13,7 @@ const formatDate = (isoString: string) => {
   });
 };
 
-const SharingBoard: React.FC<SharingBoardProps> = ({ sharedSongs }) => {
+const SharingBoard: React.FC<SharingBoardProps> = ({ sharedSongs, onSelectSong }) => {
   return (
     <section id="sharing-board" className="my-16 animate-fade-in-up">
       <div className="text-center mb-8">
@@ -30,30 +31,25 @@ const SharingBoard: React.FC<SharingBoardProps> = ({ sharedSongs }) => {
             </div>
           ) : (
             sharedSongs.map((song, index) => (
-              <details key={index} className="bg-gray-700/50 rounded-lg overflow-hidden transition-all duration-300">
-                <summary className="p-4 cursor-pointer hover:bg-gray-700/80 flex justify-between items-center">
-                  <div>
-                    <h3 className="font-semibold text-lg text-white">{song.song.title}</h3>
-                    <p className="text-sm text-gray-400">Keywords: {song.keywords}</p>
-                    <p className="text-xs text-gray-500 mt-1">Created: {formatDate(song.createdAt)}</p>
-                  </div>
-                  <span className="text-purple-400 text-sm font-semibold hidden md:block">View Details</span>
-                </summary>
-                <div className="p-4 border-t border-gray-600 bg-gray-800 space-y-4">
-                  <div>
-                    <h4 className="font-bold text-purple-300 mb-2">The Beat</h4>
-                    <p className="text-gray-300 text-sm leading-relaxed">{song.song.beatDescription}</p>
-                  </div>
-                   <div>
-                    <h4 className="font-bold text-purple-300 mb-2">The Lyrics</h4>
-                    <div className="text-gray-200 text-sm leading-loose font-mono whitespace-pre-wrap max-h-60 overflow-y-auto pr-2">
-                      {song.song.lyrics.split(/\n\s*\n/).map((stanza, i) => (
-                        <p key={i} className="mb-4">{stanza}</p>
-                      ))}
+              <div key={index} className="bg-gray-700/50 rounded-lg transition-all duration-300 hover:bg-gray-700/80">
+                 <button 
+                  onClick={() => onSelectSong(song)} 
+                  className="w-full text-left p-4 cursor-pointer flex justify-between items-center"
+                  aria-label={`Load song: ${song.song.title}`}
+                 >
+                    <div>
+                      <h3 className="font-semibold text-lg text-white">{song.song.title}</h3>
+                      <p className="text-sm text-gray-400">Keywords: {song.keywords}</p>
+                      <p className="text-xs text-gray-500 mt-1">Created: {formatDate(song.createdAt)}</p>
                     </div>
-                  </div>
-                </div>
-              </details>
+                    <div className="flex items-center gap-2 text-purple-400 text-sm font-semibold">
+                      <span className="hidden md:block">Load Track</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.707-10.293a1 1 0 00-1.414-1.414l-3 3a1 1 0 000 1.414l3 3a1 1 0 001.414-1.414L9.414 11H13a1 1 0 100-2H9.414l1.293-1.293z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  </button>
+              </div>
             ))
           )}
         </div>
