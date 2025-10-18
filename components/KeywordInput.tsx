@@ -52,11 +52,7 @@ const KeywordInput: React.FC<KeywordInputProps> = ({ keywords, setKeywords, trac
             {cooldown > 0 ? `Wait ${cooldown}s` : 'Generate'}
           </button>
         </div>
-        {cooldown > 0 ? (
-          <p className="text-center text-yellow-400 mt-4 text-sm">
-            To prevent abuse, you can generate a new track in {cooldown} second{cooldown > 1 ? 's' : ''}.
-          </p>
-        ) : (
+        {cooldown === 0 && (
           <p className="text-center text-gray-400 mt-4 text-sm">
             Enter a few keywords separated by commas to start your musical journey.
           </p>
