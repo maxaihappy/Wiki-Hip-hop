@@ -4,7 +4,6 @@ import SongResult from './components/SongResult';
 import ChatPanel from './components/ChatPanel';
 import SourceViewer from './components/SourceViewer';
 import SharingBoard from './components/SharingBoard';
-import AuthScreen from './components/AuthScreen';
 import FlippingCounter from './components/FlippingCounter';
 import { searchForSources, generateSongFromSearchResults, createModificationChat } from './services/geminiService';
 import { GenerationStatus } from './types';
@@ -65,10 +64,6 @@ const ErrorPlaceholder: React.FC<{ title: string; message: string }> = ({ title,
 );
 
 const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    // Check session storage on initial load to maintain session
-    return sessionStorage.getItem('wiki-hiphop-auth') === 'true';
-  });
   const [keywords, setKeywords] = useState('');
   const [trackLength, setTrackLength] = useState<number>(2);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>(GenerationStatus.IDLE);
@@ -86,7 +81,31 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
   
+  const [cooldown, setCooldown] = useState(0);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const isLoading = generationStatus === GenerationStatus.SEARCHING || generationStatus === GenerationStatus.GENERATING;
+
+  useEffect(() => {
+    const updateCooldown = () => {
+      const cooldownEndTime = localStorage.getItem('cooldownEndTime');
+      if (cooldownEndTime) {
+        const remainingTime = Math.ceil((parseInt(cooldownEndTime, 10) - Date.now()) / 1000);
+        if (remainingTime > 0) {
+          setCooldown(remainingTime);
+        } else {
+          setCooldown(0);
+          localStorage.removeItem('cooldownEndTime');
+        }
+      } else if (cooldown !== 0) {
+        setCooldown(0);
+      }
+    };
+
+    updateCooldown();
+    const timer = setInterval(updateCooldown, 1000);
+    
+    return () => clearInterval(timer);
+  }, [cooldown]);
 
   useEffect(() => {
     localStorage.setItem('songCount', String(songCount));
@@ -96,14 +115,22 @@ const App: React.FC = () => {
     localStorage.setItem('sharedSongs', JSON.stringify(sharedSongs));
   }, [sharedSongs]);
 
-  const handleAuthSuccess = () => {
-    sessionStorage.setItem('wiki-hiphop-auth', 'true');
-    setIsAuthenticated(true);
-  };
-
   const handleGenerate = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!keywords.trim() || isLoading) return;
+    if (isLoading) return;
+
+    if (cooldown > 0) {
+      setToastMessage(`Let the studio cool down! Please try again in ${cooldown} second${cooldown !== 1 ? 's' : ''}.`);
+      setTimeout(() => setToastMessage(null), 3000);
+      return;
+    }
+    
+    if (!keywords.trim()) return;
+
+    const COOLDOWN_SECONDS = 30;
+    const endTime = Date.now() + COOLDOWN_SECONDS * 1000;
+    localStorage.setItem('cooldownEndTime', String(endTime));
+    setCooldown(COOLDOWN_SECONDS);
 
     setResult(null);
     setSources([]);
@@ -137,7 +164,7 @@ const App: React.FC = () => {
       setError(getFriendlyErrorMessage(err));
       setGenerationStatus(GenerationStatus.DONE);
     }
-  }, [keywords, trackLength, isLoading]);
+  }, [keywords, trackLength, isLoading, cooldown]);
 
   const handleSendMessage = useCallback(async (message: string) => {
     if (!chat || isChatting || !message.trim()) return;
@@ -194,10 +221,6 @@ const App: React.FC = () => {
     document.getElementById('sharing-board')?.scrollIntoView({ behavior: 'smooth' });
   }, [result, keywords]);
 
-  if (!isAuthenticated) {
-    return <AuthScreen onSuccess={handleAuthSuccess} />;
-  }
-
   const beatMessage = generationStatus === GenerationStatus.SEARCHING ? 'Waiting for sources...' : 'Creating the beat...';
   const lyricsMessage = generationStatus === GenerationStatus.SEARCHING ? 'Waiting for sources...' : 'Writing the lyrics...';
 
@@ -250,6 +273,7 @@ const App: React.FC = () => {
               setTrackLength={setTrackLength}
               onSubmit={handleGenerate}
               isLoading={isLoading}
+              cooldown={cooldown}
             />
           </div>
 
@@ -316,6 +340,11 @@ const App: React.FC = () => {
 
           <SharingBoard sharedSongs={sharedSongs} />
         </main>
+        {toastMessage && (
+          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-yellow-500 text-gray-900 font-bold py-3 px-6 rounded-full shadow-lg animate-fade-in-up z-50">
+            {toastMessage}
+          </div>
+        )}
         <footer className="text-center text-gray-600 mt-16 pb-4">
           <p>Powered by Gemini. Crafted for creators.</p>
         </footer>
