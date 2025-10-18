@@ -293,7 +293,7 @@ const App: React.FC = () => {
             <>
               <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 mt-8 animate-fade-in-up">
                 {/* Column 1: Sources and Preview */}
-                <div className="lg:col-span-2">
+                <div className="lg:col-span-2 h-[75vh]">
                   <SourceViewer 
                     sources={sources}
                     isLoading={generationStatus === GenerationStatus.SEARCHING} 
@@ -301,13 +301,15 @@ const App: React.FC = () => {
                 </div>
 
                 {/* Column 2: The Beat */}
-                <div className="flex flex-col lg:col-span-1">
+                <div className="flex flex-col lg:col-span-1 h-[75vh]">
                    { (generationStatus === GenerationStatus.SEARCHING || generationStatus === GenerationStatus.GENERATING) ? (
                       <LoadingPlaceholder title="The Beat" message={beatMessage} />
                    ) : result ? (
-                       <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg h-full">
-                          <h3 className="text-xl font-bold text-purple-300 mb-3">The Beat</h3>
-                          <p className="text-gray-300 leading-relaxed text-sm">{result.song.beatDescription}</p>
+                       <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg h-full flex flex-col">
+                          <h3 className="text-xl font-bold text-purple-300 mb-3 flex-shrink-0">The Beat</h3>
+                          <div className="overflow-y-auto pr-2 flex-grow">
+                            <p className="text-gray-300 leading-relaxed text-sm">{result.song.beatDescription}</p>
+                          </div>
                       </div>
                    ) : error ? (
                       <ErrorPlaceholder title="Generation Failed" message="Could not create the beat." />
@@ -315,12 +317,12 @@ const App: React.FC = () => {
                 </div>
 
                  {/* Column 3: The Lyrics */}
-                <div className="flex flex-col lg:col-span-2">
+                <div className="flex flex-col lg:col-span-2 h-[75vh]">
                    { (generationStatus === GenerationStatus.SEARCHING || generationStatus === GenerationStatus.GENERATING) ? (
                         <LoadingPlaceholder title="The Lyrics" message={lyricsMessage} />
                    ) : result ? (
                         <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg h-full flex flex-col">
-                            <h3 className="text-xl font-bold text-purple-300 mb-3">The Lyrics</h3>
+                            <h3 className="text-xl font-bold text-purple-300 mb-3 flex-shrink-0">The Lyrics</h3>
                             <div className="text-gray-200 leading-loose font-mono text-sm overflow-y-auto pr-2 flex-grow">
                             {result.song.lyrics.split(/\n\s*\n/).map((stanza, index) => (
                                 <p key={index} className="mb-4 whitespace-pre-wrap">

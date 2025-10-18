@@ -76,7 +76,7 @@ const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading }) => {
 
   const renderLoadingState = () => (
      <div className="flex flex-col gap-8 h-full">
-        <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-[60vh]">
+        <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col flex-grow min-h-0">
            <h3 className="text-xl font-bold text-purple-300 mb-4 flex-shrink-0">Wiki</h3>
            <div className="flex-grow flex items-center justify-center text-gray-400">
              <div className="flex items-center space-x-3">
@@ -85,7 +85,7 @@ const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading }) => {
             </div>
            </div>
         </div>
-        <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col flex-grow">
+        <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-48 flex-shrink-0">
            <h3 className="text-xl font-bold text-purple-300 mb-4 flex-shrink-0">All Sources</h3>
            <div className="flex items-center space-x-3 text-gray-400">
              <div className="w-4 h-4 border-2 border-dashed border-gray-500 rounded-full animate-spin"></div>
@@ -155,7 +155,7 @@ const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading }) => {
 
       {/* Normal View */}
       <div className="flex flex-col gap-8 h-full">
-        <div className="bg-gray-800/50 backdrop-blur-sm p-4 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-[60vh]">
+        <div className="bg-gray-800/50 backdrop-blur-sm p-4 rounded-2xl border border-gray-700 shadow-lg flex flex-col flex-grow min-h-0">
           <div className="flex justify-between items-center mb-4 flex-shrink-0 px-2">
               <h3 className="text-xl font-bold text-purple-300">Wiki</h3>
               <button
@@ -189,9 +189,9 @@ const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading }) => {
           </div>
         </div>
 
-        <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col">
+        <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-48 flex-shrink-0">
           <h3 className="text-xl font-bold text-purple-300 mb-4 flex-shrink-0">All Sources</h3>
-          <div className="overflow-y-auto pr-2 max-h-48">
+          <div className="overflow-y-auto pr-2 flex-grow">
               <ul className="space-y-2">
               {sortedSources.map((source) => (
                   <li key={source.uri} className="flex items-center gap-2">
