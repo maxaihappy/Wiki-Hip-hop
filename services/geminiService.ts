@@ -231,6 +231,9 @@ export async function generateSongFromSearchResults(
   }
   
   const languageLabel = getLanguageLabel(language);
+  const languageInstruction = language === 'zh'
+    ? 'All output (title, beat description, and lyrics) MUST be written in Chinese (中文). Section labels like [Intro], [Verse 1], and [Chorus] may remain in English.'
+    : 'All output (title, beat description, and lyrics) MUST be written in English.';
   // Estimate target word count based on an average rap speed (approx. 160 WPM for English, ~120 for Chinese)
   const wordsPerMinute = language === 'zh' ? 120 : 160;
   const targetWordCount = Math.round(trackLengthInMinutes * wordsPerMinute);
