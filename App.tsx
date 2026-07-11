@@ -219,6 +219,32 @@ const App: React.FC = () => {
     URL.revokeObjectURL(url);
   }, [result]);
 
+  const handleDownloadTrack = useCallback(() => {
+    if (!result || !result.song) return;
+    const { song, sources } = result;
+    const payload = {
+      input: {
+        keywords,
+        trackLengthMinutes: trackLength,
+        language,
+      },
+      title: song.title,
+      beat: song.beatDescription,
+      lyrics: song.lyrics,
+      sources: sources.map(s => ({ title: s.title, uri: s.uri })),
+      exportedAt: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${song.title.replace(/\s+/g, '_')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [result, keywords, trackLength, language]);
+
   const handleShareSong = useCallback(() => {
     if (!result) return;
     const newSharedSong: SharedSong = {
@@ -302,7 +328,7 @@ const App: React.FC = () => {
 
           {generationStatus === GenerationStatus.DONE && result && (
              <div className="my-12 animate-fade-in-up max-w-2xl mx-auto">
-                <SongResult result={result} onDownloadLyrics={handleDownloadLyrics} onShare={handleShareSong} />
+                <SongResult result={result} onDownloadLyrics={handleDownloadLyrics} onDownloadTrack={handleDownloadTrack} onShare={handleShareSong} downloadTrackLabel={t(language, 'downloadTrack')} />
             </div>
           )}
           

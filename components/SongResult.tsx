@@ -4,7 +4,9 @@ import type { GenerationResult } from '../types';
 interface SongResultProps {
   result: GenerationResult;
   onDownloadLyrics: () => void;
+  onDownloadTrack: () => void;
   onShare: () => void;
+  downloadTrackLabel: string;
 }
 
 const FeedbackSection: React.FC = () => {
@@ -57,7 +59,7 @@ const FeedbackSection: React.FC = () => {
     );
 };
 
-const SongResult: React.FC<SongResultProps> = ({ result, onDownloadLyrics, onShare }) => {
+const SongResult: React.FC<SongResultProps> = ({ result, onDownloadLyrics, onDownloadTrack, onShare, downloadTrackLabel }) => {
   const { song } = result;
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
@@ -181,6 +183,12 @@ const SongResult: React.FC<SongResultProps> = ({ result, onDownloadLyrics, onSha
                     className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-500/50 shadow-lg text-sm"
                 >
                     Share
+                </button>
+                <button
+                    onClick={onDownloadTrack}
+                    className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-full transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-500/50 shadow-lg text-sm"
+                >
+                    {downloadTrackLabel}
                 </button>
                 <button
                     onClick={onDownloadLyrics}

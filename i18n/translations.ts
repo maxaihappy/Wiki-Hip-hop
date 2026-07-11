@@ -25,6 +25,7 @@ export const translations: Record<Language, Record<string, string>> = {
     copied: 'Copied!',
     copyFailed: 'Failed to copy',
     error: 'Error',
+    downloadTrack: 'Download All',
     poweredBy: 'Powered by Gemini. Crafted for creators.',
   },
   zh: {
@@ -51,6 +52,7 @@ export const translations: Record<Language, Record<string, string>> = {
     copied: '已复制！',
     copyFailed: '复制失败',
     error: '错误',
+    downloadTrack: '下载全部',
     poweredBy: '由 Gemini 驱动。为创作者打造。',
   },
 };
