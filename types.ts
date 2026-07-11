@@ -1,4 +1,4 @@
-
+export type Language = 'en' | 'zh';
 
 export interface SongData {
   title: string;

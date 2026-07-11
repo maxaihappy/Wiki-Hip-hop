@@ -1,5 +1,13 @@
 import { GoogleGenAI, Type, Chat } from "@google/genai";
-import type { GroundingSource, SongData } from "../types";
+import type { GroundingSource, SongData, Language } from "../types";
+
+function getWikipediaHost(language: Language): string {
+  return language === 'zh' ? 'zh.wikipedia.org' : 'en.wikipedia.org';
+}
+
+function getLanguageLabel(language: Language): string {
+  return language === 'zh' ? 'Chinese (中文)' : 'English';
+}
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -108,18 +116,20 @@ function sortSources(sources: GroundingSource[], keywords: string): GroundingSou
 
 export async function searchForSources(
   keywords: string,
-  onPreviewSourceFound: (source: GroundingSource) => void
+  onPreviewSourceFound: (source: GroundingSource) => void,
+  language: Language = 'en'
 ): Promise<SearchResult> {
   if (!process.env.API_KEY) {
     throw new Error("API key is missing. Please set the API_KEY environment variable.");
   }
 
   const primaryKeyword = keywords.split(',')[0].trim();
+  const wikiHost = getWikipediaHost(language);
 
   if (primaryKeyword) {
     try {
       // Use Wikipedia API to find a relevant article
-      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(primaryKeyword)}&limit=1&format=json&origin=*`;
+      const searchUrl = `https://${wikiHost}/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(primaryKeyword)}&limit=1&format=json&origin=*`;
       const searchResponse = await fetch(searchUrl);
       if (!searchResponse.ok) throw new Error(`Wikipedia search API failed with status ${searchResponse.status}`);
       
@@ -130,7 +140,7 @@ export async function searchForSources(
         const encodedTitle = encodeURIComponent(pageTitle.replace(/ /g, '_'));
         
         // Fetch the summary and canonical URL
-        const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodedTitle}`;
+        const summaryUrl = `https://${wikiHost}/api/rest_v1/page/summary/${encodedTitle}`;
         const summaryResponse = await fetch(summaryUrl);
         if (!summaryResponse.ok) throw new Error(`Wikipedia summary API failed with status ${summaryResponse.status}`);
         
@@ -211,13 +221,19 @@ export async function searchForSources(
   return { searchResultsText, sources: sortedSources };
 }
 
-export async function generateSongFromSearchResults(searchResultsText: string, trackLengthInMinutes: number): Promise<SongData> {
+export async function generateSongFromSearchResults(
+  searchResultsText: string,
+  trackLengthInMinutes: number,
+  language: Language = 'en'
+): Promise<SongData> {
    if (!process.env.API_KEY) {
     throw new Error("API key is missing. Please set the API_KEY environment variable.");
   }
   
-  // Estimate target word count based on an average rap speed (approx. 160 WPM)
-  const targetWordCount = Math.round(trackLengthInMinutes * 160);
+  const languageLabel = getLanguageLabel(language);
+  // Estimate target word count based on an average rap speed (approx. 160 WPM for English, ~120 for Chinese)
+  const wordsPerMinute = language === 'zh' ? 120 : 160;
+  const targetWordCount = Math.round(trackLengthInMinutes * wordsPerMinute);
   
   // Step 2: Summarize the search results to a specific word count
   // We'll aim for a summary that's about a third of the total length to give the story and lyrics room to expand.
@@ -240,13 +256,13 @@ export async function generateSongFromSearchResults(searchResultsText: string, t
   const story = storyResponse.text;
 
   // Step 4: Generate the song (lyrics, title, beat) from the story, constrained by length
-  const songPrompt = `Here is the story to turn into a song. The total lyrics should be approximately ${targetWordCount} words to create a song that is about ${trackLengthInMinutes} minute(s) long.\n\n${story}`;
+  const songPrompt = `Here is the story to turn into a song. The total lyrics should be approximately ${targetWordCount} words to create a song that is about ${trackLengthInMinutes} minute(s) long. Write everything in ${languageLabel}.\n\n${story}`;
   
   const songResponse = await ai.models.generateContent({
     model: "gemini-2.5-flash",
     contents: songPrompt,
     config: {
-      systemInstruction: "You are a legendary hip-hop producer and lyricist known for creating profound, story-driven tracks. Your task is to transform a given story into a complete hip-hop song. You must provide a song title, a detailed description of the beat, and full lyrics. The lyrics should be well-structured with clear sections like [Intro], [Verse 1], [Chorus], [Verse 2], etc. The tone should be thoughtful and rhythmic. Adhere strictly to the requested word count for the lyrics.",
+      systemInstruction: `You are a legendary hip-hop producer and lyricist known for creating profound, story-driven tracks. Your task is to transform a given story into a complete hip-hop song. You must provide a song title, a detailed description of the beat, and full lyrics. The lyrics should be well-structured with clear sections like [Intro], [Verse 1], [Chorus], [Verse 2], etc. The tone should be thoughtful and rhythmic. Adhere strictly to the requested word count for the lyrics. ${languageInstruction}`,
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -266,11 +282,15 @@ export async function generateSongFromSearchResults(searchResultsText: string, t
 }
 
 
-export function createModificationChat(initialSong: SongData, keywords: string): Chat {
+export function createModificationChat(initialSong: SongData, keywords: string, language: Language = 'en'): Chat {
+  const languageInstruction = language === 'zh'
+    ? 'Keep all song output in Chinese (中文).'
+    : 'Keep all song output in English.';
+
   const chat = ai.chats.create({
     model: 'gemini-2.5-flash',
     config: {
-      systemInstruction: `You are a legendary hip-hop producer and lyricist. You have just created a song based on the keywords: "${keywords}". The user will now give you feedback to refine it. Your task is to take their feedback and regenerate the song based ONLY on the previous version and the user's request. Do NOT use external information or search for new data. Your goal is a quick, creative edit. You MUST respond with the complete, updated song in the specified JSON format. Your response MUST include a 'comment' field explaining the changes you made. Do not add any conversational text outside of the JSON structure.`,
+      systemInstruction: `You are a legendary hip-hop producer and lyricist. You have just created a song based on the keywords: "${keywords}". The user will now give you feedback to refine it. Your task is to take their feedback and regenerate the song based ONLY on the previous version and the user's request. Do NOT use external information or search for new data. Your goal is a quick, creative edit. ${languageInstruction} You MUST respond with the complete, updated song in the specified JSON format. Your response MUST include a 'comment' field explaining the changes you made. Do not add any conversational text outside of the JSON structure.`,
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,

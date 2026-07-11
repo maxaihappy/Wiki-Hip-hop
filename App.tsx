@@ -5,10 +5,12 @@ import ChatPanel from './components/ChatPanel';
 import SourceViewer from './components/SourceViewer';
 import SharingBoard from './components/SharingBoard';
 import FlippingCounter from './components/FlippingCounter';
+import CopyButton from './components/CopyButton';
 import { searchForSources, generateSongFromSearchResults, createModificationChat } from './services/geminiService';
 import { GenerationStatus } from './types';
-import type { GenerationResult, ChatMessage, SongData, GroundingSource, SharedSong } from './types';
+import type { GenerationResult, ChatMessage, SongData, GroundingSource, SharedSong, Language } from './types';
 import type { Chat } from '@google/genai';
+import { t } from './i18n/translations';
 
 function getFriendlyErrorMessage(error: unknown): string {
   const defaultMessage = "An unexpected hiccup occurred. Please try again. If the problem continues, try adjusting your keywords.";
@@ -66,6 +68,10 @@ const ErrorPlaceholder: React.FC<{ title: string; message: string }> = ({ title,
 const App: React.FC = () => {
   const [keywords, setKeywords] = useState('');
   const [trackLength, setTrackLength] = useState<number>(2);
+  const [language, setLanguage] = useState<Language>(() => {
+    const saved = localStorage.getItem('language');
+    return saved === 'zh' ? 'zh' : 'en';
+  });
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>(GenerationStatus.IDLE);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerationResult | null>(null);
@@ -108,6 +114,10 @@ const App: React.FC = () => {
   }, [cooldown]);
 
   useEffect(() => {
+    localStorage.setItem('language', language);
+  }, [language]);
+
+  useEffect(() => {
     localStorage.setItem('songCount', String(songCount));
   }, [songCount]);
 
@@ -145,17 +155,17 @@ const App: React.FC = () => {
         setSources([previewSource]);
       };
 
-      const { searchResultsText, sources: foundSources } = await searchForSources(keywords, handlePreviewSource);
+      const { searchResultsText, sources: foundSources } = await searchForSources(keywords, handlePreviewSource, language);
       setSources(foundSources);
 
       setGenerationStatus(GenerationStatus.GENERATING);
-      const songData = await generateSongFromSearchResults(searchResultsText, trackLength);
+      const songData = await generateSongFromSearchResults(searchResultsText, trackLength, language);
       
       const finalResult = { song: songData, sources: foundSources };
       setResult(finalResult);
       setSongCount(prevCount => prevCount + 1);
 
-      const modificationChat = createModificationChat(finalResult.song, keywords);
+      const modificationChat = createModificationChat(finalResult.song, keywords, language);
       setChat(modificationChat);
 
       setGenerationStatus(GenerationStatus.DONE);
@@ -164,7 +174,7 @@ const App: React.FC = () => {
       setError(getFriendlyErrorMessage(err));
       setGenerationStatus(GenerationStatus.DONE);
     }
-  }, [keywords, trackLength, isLoading, cooldown]);
+  }, [keywords, trackLength, language, isLoading, cooldown]);
 
   const handleSendMessage = useCallback(async (message: string) => {
     if (!chat || isChatting || !message.trim()) return;
@@ -232,8 +242,8 @@ const App: React.FC = () => {
     document.querySelector('main')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
-  const beatMessage = generationStatus === GenerationStatus.SEARCHING ? 'Waiting for sources...' : 'Creating the beat...';
-  const lyricsMessage = generationStatus === GenerationStatus.SEARCHING ? 'Waiting for sources...' : 'Writing the lyrics...';
+  const beatMessage = generationStatus === GenerationStatus.SEARCHING ? t(language, 'waitingForSources') : t(language, 'creatingBeat');
+  const lyricsMessage = generationStatus === GenerationStatus.SEARCHING ? t(language, 'waitingForSources') : t(language, 'writingLyrics');
 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans p-4 sm:p-8">
@@ -264,14 +274,14 @@ const App: React.FC = () => {
           <div className="absolute top-0 right-0">
             <div className="bg-gray-800/50 backdrop-blur-sm p-2 rounded-lg border border-gray-700 flex items-center gap-3">
               <FlippingCounter count={songCount} />
-              <p className="text-gray-300 text-xs md:text-sm font-semibold pr-2 leading-tight text-center">Songs<br/>Created</p>
+              <p className="text-gray-300 text-xs md:text-sm font-semibold pr-2 leading-tight text-center whitespace-pre-line">{t(language, 'songsCreated')}</p>
             </div>
           </div>
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500 mb-2">
             Wiki Hip-hop
           </h1>
           <p className="text-lg md:text-xl text-gray-400">
-            From Keywords to Killer Tracks.
+            {t(language, 'tagline')}
           </p>
         </header>
 
@@ -282,6 +292,8 @@ const App: React.FC = () => {
               setKeywords={setKeywords}
               trackLength={trackLength}
               setTrackLength={setTrackLength}
+              language={language}
+              setLanguage={setLanguage}
               onSubmit={handleGenerate}
               isLoading={isLoading}
               cooldown={cooldown}
@@ -296,7 +308,7 @@ const App: React.FC = () => {
           
           {error && (
             <div className="w-full max-w-4xl mx-auto mt-12 bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-center animate-fade-in-up">
-              <p><strong>Error:</strong> {error}</p>
+              <p><strong>{t(language, 'error')}:</strong> {error}</p>
             </div>
           )}
 
@@ -315,26 +327,42 @@ const App: React.FC = () => {
                 {/* Column 2: The Beat */}
                 <div className="flex flex-col lg:col-span-1 h-[75vh]">
                    { (generationStatus === GenerationStatus.SEARCHING || generationStatus === GenerationStatus.GENERATING) ? (
-                      <LoadingPlaceholder title="The Beat" message={beatMessage} />
+                      <LoadingPlaceholder title={t(language, 'theBeat')} message={beatMessage} />
                    ) : result ? (
                        <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg h-full flex flex-col">
-                          <h3 className="text-xl font-bold text-purple-300 mb-3 flex-shrink-0">The Beat</h3>
+                          <div className="flex items-center justify-between mb-3 flex-shrink-0 gap-2">
+                            <h3 className="text-xl font-bold text-purple-300">{t(language, 'theBeat')}</h3>
+                            <CopyButton
+                              text={result.song.beatDescription}
+                              label={t(language, 'copyBeat')}
+                              copiedLabel={t(language, 'copied')}
+                              failedLabel={t(language, 'copyFailed')}
+                            />
+                          </div>
                           <div className="overflow-y-auto pr-2 flex-grow">
                             <p className="text-gray-300 leading-relaxed text-sm">{result.song.beatDescription}</p>
                           </div>
                       </div>
                    ) : error ? (
-                      <ErrorPlaceholder title="Generation Failed" message="Could not create the beat." />
+                      <ErrorPlaceholder title={t(language, 'generationFailed')} message={t(language, 'couldNotCreateBeat')} />
                    ) : null}
                 </div>
 
                  {/* Column 3: The Lyrics */}
                 <div className="flex flex-col lg:col-span-2 h-[75vh]">
                    { (generationStatus === GenerationStatus.SEARCHING || generationStatus === GenerationStatus.GENERATING) ? (
-                        <LoadingPlaceholder title="The Lyrics" message={lyricsMessage} />
+                        <LoadingPlaceholder title={t(language, 'theLyrics')} message={lyricsMessage} />
                    ) : result ? (
                         <div className="relative bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg h-full flex flex-col">
-                            <h3 className="text-xl font-bold text-purple-300 mb-3 flex-shrink-0">The Lyrics</h3>
+                            <div className="flex items-center justify-between mb-3 flex-shrink-0 gap-2">
+                              <h3 className="text-xl font-bold text-purple-300">{t(language, 'theLyrics')}</h3>
+                              <CopyButton
+                                text={result.song.lyrics}
+                                label={t(language, 'copyLyrics')}
+                                copiedLabel={t(language, 'copied')}
+                                failedLabel={t(language, 'copyFailed')}
+                              />
+                            </div>
                             <div className="text-gray-200 leading-loose font-mono text-sm overflow-y-auto pr-2 flex-grow">
                             {result.song.lyrics.split(/\n\s*\n/).map((stanza, index) => (
                                 <p key={index} className="mb-4 whitespace-pre-wrap">
@@ -344,7 +372,7 @@ const App: React.FC = () => {
                             </div>
                         </div>
                    ) : error ? (
-                        <ErrorPlaceholder title="Generation Failed" message="Could not write the lyrics." />
+                        <ErrorPlaceholder title={t(language, 'generationFailed')} message={t(language, 'couldNotWriteLyrics')} />
                    ) : null }
                 </div>
               </div>
@@ -360,7 +388,7 @@ const App: React.FC = () => {
           </div>
         )}
         <footer className="text-center text-gray-600 mt-16 pb-4">
-          <p>Powered by Gemini. Crafted for creators.</p>
+          <p>{t(language, 'poweredBy')}</p>
         </footer>
       </div>
     </div>
