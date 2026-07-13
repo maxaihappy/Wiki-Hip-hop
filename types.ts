@@ -1,4 +1,5 @@
 export type Language = 'en' | 'zh';
+export type InputMode = 'keywords' | 'text';
 
 export interface SongData {
   title: string;

@@ -8,7 +8,7 @@ import FlippingCounter from './components/FlippingCounter';
 import CopyButton from './components/CopyButton';
 import { searchForSources, generateSongFromSearchResults, createModificationChat } from './services/geminiService';
 import { GenerationStatus } from './types';
-import type { GenerationResult, ChatMessage, SongData, GroundingSource, SharedSong, Language } from './types';
+import type { GenerationResult, ChatMessage, SongData, GroundingSource, SharedSong, Language, InputMode } from './types';
 import type { Chat } from '@google/genai';
 import { t } from './i18n/translations';
 
@@ -67,6 +67,9 @@ const ErrorPlaceholder: React.FC<{ title: string; message: string }> = ({ title,
 
 const App: React.FC = () => {
   const [keywords, setKeywords] = useState('');
+  const [pastedContext, setPastedContext] = useState('');
+  const [inputMode, setInputMode] = useState<InputMode>('keywords');
+  const [activeContextText, setActiveContextText] = useState<string | null>(null);
   const [trackLength, setTrackLength] = useState<number>(2);
   const [language, setLanguage] = useState<Language>(() => {
     const saved = localStorage.getItem('language');
@@ -135,7 +138,8 @@ const App: React.FC = () => {
       return;
     }
     
-    if (!keywords.trim()) return;
+    if (inputMode === 'keywords' && !keywords.trim()) return;
+    if (inputMode === 'text' && !pastedContext.trim()) return;
 
     const COOLDOWN_SECONDS = 30;
     const endTime = Date.now() + COOLDOWN_SECONDS * 1000;
@@ -144,28 +148,50 @@ const App: React.FC = () => {
 
     setResult(null);
     setSources([]);
+    setActiveContextText(null);
     setError(null);
     setChat(null);
     setChatHistory([]);
     
     try {
-      setGenerationStatus(GenerationStatus.SEARCHING);
-      
-      const handlePreviewSource = (previewSource: GroundingSource) => {
-        setSources([previewSource]);
-      };
+      let searchResultsText: string;
+      let foundSources: GroundingSource[];
+      let chatLabel: string;
 
-      const { searchResultsText, sources: foundSources } = await searchForSources(keywords, handlePreviewSource, language);
-      setSources(foundSources);
+      if (inputMode === 'text') {
+        const context = pastedContext.trim();
+        searchResultsText = context;
+        chatLabel = context.slice(0, 120);
+        const pastedSource: GroundingSource = {
+          title: t(language, 'yourContext'),
+          uri: '#pasted-context',
+        };
+        foundSources = [pastedSource];
+        setActiveContextText(context);
+        setSources(foundSources);
+        setGenerationStatus(GenerationStatus.GENERATING);
+      } else {
+        setGenerationStatus(GenerationStatus.SEARCHING);
+        chatLabel = keywords;
 
-      setGenerationStatus(GenerationStatus.GENERATING);
+        const handlePreviewSource = (previewSource: GroundingSource) => {
+          setSources([previewSource]);
+        };
+
+        const searchResult = await searchForSources(keywords, handlePreviewSource, language);
+        searchResultsText = searchResult.searchResultsText;
+        foundSources = searchResult.sources;
+        setSources(foundSources);
+        setGenerationStatus(GenerationStatus.GENERATING);
+      }
+
       const songData = await generateSongFromSearchResults(searchResultsText, trackLength, language);
       
       const finalResult = { song: songData, sources: foundSources };
       setResult(finalResult);
       setSongCount(prevCount => prevCount + 1);
 
-      const modificationChat = createModificationChat(finalResult.song, keywords, language);
+      const modificationChat = createModificationChat(finalResult.song, chatLabel, language);
       setChat(modificationChat);
 
       setGenerationStatus(GenerationStatus.DONE);
@@ -174,7 +200,7 @@ const App: React.FC = () => {
       setError(getFriendlyErrorMessage(err));
       setGenerationStatus(GenerationStatus.DONE);
     }
-  }, [keywords, trackLength, language, isLoading, cooldown]);
+  }, [keywords, pastedContext, inputMode, trackLength, language, isLoading, cooldown]);
 
   const handleSendMessage = useCallback(async (message: string) => {
     if (!chat || isChatting || !message.trim()) return;
@@ -224,7 +250,9 @@ const App: React.FC = () => {
     const { song, sources } = result;
     const payload = {
       input: {
-        keywords,
+        mode: inputMode,
+        keywords: inputMode === 'keywords' ? keywords : undefined,
+        pastedContext: inputMode === 'text' ? pastedContext : undefined,
         trackLengthMinutes: trackLength,
         language,
       },
@@ -243,7 +271,7 @@ const App: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [result, keywords, trackLength, language]);
+  }, [result, keywords, pastedContext, inputMode, trackLength, language]);
 
   const handleShareSong = useCallback(() => {
     if (!result) return;
@@ -261,6 +289,9 @@ const App: React.FC = () => {
     setResult(song);
     setSources(song.sources);
     setKeywords(song.keywords);
+    setInputMode('keywords');
+    setPastedContext('');
+    setActiveContextText(null);
     setGenerationStatus(GenerationStatus.DONE);
     setChat(null);
     setChatHistory([]);
@@ -268,8 +299,12 @@ const App: React.FC = () => {
     document.querySelector('main')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
-  const beatMessage = generationStatus === GenerationStatus.SEARCHING ? t(language, 'waitingForSources') : t(language, 'creatingBeat');
-  const lyricsMessage = generationStatus === GenerationStatus.SEARCHING ? t(language, 'waitingForSources') : t(language, 'writingLyrics');
+  const beatMessage = generationStatus === GenerationStatus.SEARCHING
+    ? t(language, 'waitingForSources')
+    : t(language, 'creatingBeat');
+  const lyricsMessage = generationStatus === GenerationStatus.SEARCHING
+    ? (inputMode === 'text' ? t(language, 'readingContext') : t(language, 'waitingForSources'))
+    : t(language, 'writingLyrics');
 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans p-4 sm:p-8">
@@ -314,8 +349,12 @@ const App: React.FC = () => {
         <main>
           <div className="flex flex-col items-center max-w-4xl mx-auto">
             <KeywordInput
+              inputMode={inputMode}
+              setInputMode={setInputMode}
               keywords={keywords}
               setKeywords={setKeywords}
+              pastedContext={pastedContext}
+              setPastedContext={setPastedContext}
               trackLength={trackLength}
               setTrackLength={setTrackLength}
               language={language}
@@ -346,7 +385,9 @@ const App: React.FC = () => {
                   <SourceViewer 
                     sources={sources}
                     isLoading={generationStatus === GenerationStatus.SEARCHING}
-                    keywords={keywords} 
+                    keywords={keywords}
+                    contextText={activeContextText ?? undefined}
+                    language={language}
                   />
                 </div>
 

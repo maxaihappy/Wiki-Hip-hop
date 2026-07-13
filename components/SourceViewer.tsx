@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import type { GroundingSource } from '../types';
+import type { GroundingSource, Language } from '../types';
+import { t } from '../i18n/translations';
 
 interface SourceViewerProps {
   sources: GroundingSource[];
   isLoading: boolean;
   keywords: string;
+  contextText?: string;
+  language?: Language;
 }
 
 const whitelistedDomains = ['wikipedia.org'];
@@ -41,9 +44,10 @@ const PreviewFallback: React.FC<{ url: string }> = ({ url }) => (
 );
 
 
-const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading, keywords }) => {
+const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading, keywords, contextText, language = 'en' }) => {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [iframeKey, setIframeKey] = useState(1);
+  const isPastedContext = Boolean(contextText);
 
   const primarySource = useMemo(() => {
     if (!sources || sources.length === 0) return null;
@@ -79,8 +83,34 @@ const SourceViewer: React.FC<SourceViewerProps> = ({ sources, isLoading, keyword
       </div>
   );
 
-  if (isLoading && sources.length === 0) {
+  if (isLoading && sources.length === 0 && !isPastedContext) {
     return renderLoadingState();
+  }
+
+  if (isPastedContext && contextText) {
+    return (
+      <div className="flex flex-col gap-8 h-full">
+        <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col flex-grow min-h-0">
+          <h3 className="text-xl font-bold text-purple-300 mb-4 flex-shrink-0">{t(language, 'yourContext')}</h3>
+          <div className="overflow-y-auto pr-2 flex-grow text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
+            {contextText}
+          </div>
+        </div>
+        <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col h-48 flex-shrink-0">
+          <h3 className="text-xl font-bold text-purple-300 mb-4 flex-shrink-0">All Sources</h3>
+          <div className="overflow-y-auto pr-2 flex-grow">
+            <ul className="space-y-3">
+              <li>
+                <div className="flex items-center gap-3 w-full text-left p-2.5 rounded-lg text-sm font-medium text-gray-300">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-purple-400 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm1 9h-2v2h2v-2zm0 4h-2v4h2v-4z"/></svg>
+                  <span className="truncate flex-grow">{t(language, 'yourContext')}</span>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!sources || sources.length === 0) {
